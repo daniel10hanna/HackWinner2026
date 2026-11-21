@@ -2,14 +2,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { useState, type ComponentProps, type PropsWithChildren } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useMemo, useRef, useState, type ComponentProps, type PropsWithChildren } from 'react';
+import { Animated, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { eventDate, price, type Category, type Event } from '@/lib/events';
 import { useEvents } from '@/lib/event-provider';
 import demoJazz from '@/assets/images/demo-jazz.jpg';
+import market from '@/assets/images/chillz/market.webp';
+import park from '@/assets/images/chillz/park.webp';
 
 export const palette = {
-  background: '#100e19', surface: '#1c182a', border: '#342b46', accent: '#c2a3ff',
+  background: '#100e19', surface: '#1b1727', border: '#322940', accent: '#c7a8ff',
   text: '#faf7ff', muted: '#c0b6ce', blue: '#93b4ff',
 };
 export const ui = StyleSheet.create({
@@ -55,7 +57,9 @@ export function Chip({ label, selected, onPress }: { label: string; selected: bo
 export function EventArt({ event, height }: { event: Event; height: number }) {
   const [failed, setFailed] = useState<string | null>(null);
   const [first, second, icon] = artwork[event.category];
-  const localCover = event.demo && event.id === 'demo-0' ? demoJazz : null;
+  const localCover = event.demo
+    ? ({ 'demo-0': demoJazz, 'demo-1': market, 'demo-5': park, 'demo-8': park, 'demo-restaurant-1': market } as Record<string, number>)[event.id]
+    : null;
   return (
     <LinearGradient colors={[first, second, '#15102a']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
       style={{ height, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
@@ -71,24 +75,73 @@ export function EventArt({ event, height }: { event: Event; height: number }) {
   );
 }
 
-export function EventCard({ event, featured = false }: { event: Event; featured?: boolean }) {
-  const { saved, ready, toggle } = useEvents();
+export function EventCard({ event }: { event: Event }) {
+  const { saved, ready, toggle, likes, like } = useEvents();
   const bookmarked = saved.some(item => item.id === event.id);
+  const liked = likes.includes(event.id);
+  const [shift] = useState(() => new Animated.Value(0));
+  const [heart] = useState(() => new Animated.Value(0));
+  const lastTap = useRef(0);
+  const swipe = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponderCapture: (_, { dx, dy }) => dx < -12 && Math.abs(dx) > Math.abs(dy) * 1.5,
+    onPanResponderGrant: () => shift.stopAnimation(),
+    onPanResponderMove: (_, { dx }) => shift.setValue(Math.max(-110, Math.min(0, dx))),
+    onPanResponderRelease: (_, { dx }) => {
+      if (dx < -65) toggle(event, true);
+      Animated.spring(shift, { toValue: 0, useNativeDriver: Platform.OS !== 'web' }).start();
+    },
+    onPanResponderTerminate: () => Animated.spring(shift, { toValue: 0, useNativeDriver: Platform.OS !== 'web' }).start(),
+  }), [event, shift, toggle]);
+
+  function tapCard() {
+    if (!ready) return;
+    const now = Date.now();
+    if (lastTap.current && now - lastTap.current < 325) {
+      lastTap.current = 0;
+      like(event.id, true);
+      heart.setValue(1);
+      Animated.timing(heart, { toValue: 0, duration: 540, useNativeDriver: Platform.OS !== 'web' }).start();
+    } else lastTap.current = now;
+  }
+
+  const detail = () => router.push({ pathname: '/event/[id]', params: { id: event.id } });
+  const location = event.neighborhood ?? event.venue ?? 'Montréal';
   return (
-    <View style={styles.card}>
-      <Pressable accessibilityRole="button" accessibilityLabel={'View ' + event.title} onPress={() => router.push({ pathname: '/event/[id]', params: { id: event.id } })}>
-        <EventArt event={event} height={featured ? 200 : 134} />
-        <View style={styles.cardBody}>
-          <Text style={ui.label}>{event.category}{event.demo ? ' · Fictional' : ''}</Text>
-          <Text style={styles.cardTitle}>{event.title}</Text>
-          <Text style={ui.muted}>{eventDate(event.start_time)} · {event.neighborhood ?? event.venue ?? 'Montréal'}</Text>
-          <Text style={[ui.text, { color: palette.accent, fontWeight: '700' }]}>{price(event)}</Text>
+    <View style={styles.swipeContainer} {...swipe.panHandlers}>
+      <View style={styles.reveal}>
+        <Ionicons name="bookmark" color="#211039" size={21} />
+        <Text style={ui.buttonText}>{bookmarked ? 'Saved' : 'Save'}</Text>
+      </View>
+      <Animated.View style={[styles.card, { transform: [{ translateX: shift }] }]}>
+        <Pressable onPress={tapCard} accessible={false} style={styles.cardMain} onTouchMove={() => { lastTap.current = 0; }}>
+          <View style={styles.thumbnail}><EventArt event={event} height={114} /></View>
+          <View style={styles.cardBody}>
+            <Text style={styles.cardCategory}>{event.kind === 'restaurant' ? 'Restaurant' : event.category} · {location}</Text>
+            <Text style={styles.cardTitle}>{event.title}</Text>
+            {event.description && <Text numberOfLines={2} style={styles.description}>{event.description}</Text>}
+          </View>
+          <Animated.View pointerEvents="none" style={[styles.heartFlash, { opacity: heart }]}>
+            <Ionicons name="heart" color="#ff95c4" size={57} />
+          </Animated.View>
+        </Pressable>
+        <View style={styles.cardFooter}>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={styles.cardPrice}>{price(event)}{event.kind === 'restaurant' && event.price_amount != null ? ' avg.' : ''}</Text>
+            {event.kind !== 'restaurant' && <Text style={styles.date}>{eventDate(event.start_time)}</Text>}
+          </View>
+          <Pressable accessibilityRole="button" accessibilityLabel={(liked ? 'Unlike ' : 'Like ') + event.title} accessibilityState={{ selected: liked }}
+            disabled={!ready} onPress={() => like(event.id)} style={styles.iconButton}>
+            <Ionicons name={liked ? 'heart' : 'heart-outline'} color={liked ? '#ff95c4' : palette.muted} size={20} />
+          </Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={(bookmarked ? 'Remove favourite ' : 'Save favourite ') + event.title}
+            accessibilityState={{ selected: bookmarked }} disabled={!ready} onPress={() => toggle(event)} style={styles.iconButton}>
+            <Ionicons name={bookmarked ? 'bookmark' : 'bookmark-outline'} color={bookmarked ? palette.accent : palette.muted} size={19} />
+          </Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={'View ' + event.title} onPress={detail} style={styles.iconButton}>
+            <Ionicons name="arrow-forward" color={palette.accent} size={19} />
+          </Pressable>
         </View>
-      </Pressable>
-      <Pressable accessibilityRole="button" accessibilityLabel={bookmarked ? 'Remove saved event' : 'Save event'} disabled={!ready}
-        accessibilityState={{ selected: bookmarked, disabled: !ready }} onPress={() => toggle(event)} style={styles.bookmark}>
-        <Ionicons name={bookmarked ? 'bookmark' : 'bookmark-outline'} color={palette.text} size={20} />
-      </Pressable>
+      </Animated.View>
     </View>
   );
 }
@@ -114,8 +167,18 @@ export function FeedStatus({ empty }: { empty: string }) {
 
 const styles = StyleSheet.create({
   ring: { position: 'absolute', borderColor: '#e8d8ff35', borderWidth: 1, borderRadius: 200, transform: [{ scaleX: 1.4 }, { rotate: '-18deg' }] },
-  card: { overflow: 'hidden', borderRadius: 20, backgroundColor: palette.surface, borderWidth: 1, borderColor: palette.border, marginBottom: 14 },
-  cardBody: { padding: 15, gap: 4 },
-  cardTitle: { color: palette.text, fontSize: 22, letterSpacing: -0.5, fontWeight: '800' },
-  bookmark: { position: 'absolute', top: 10, right: 10, height: 46, width: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', backgroundColor: '#161027df' },
+  swipeContainer: { overflow: 'hidden', borderRadius: 20, marginBottom: 12 },
+  reveal: { ...StyleSheet.absoluteFill, backgroundColor: palette.accent, alignItems: 'flex-end', justifyContent: 'center', paddingRight: 23, gap: 4 },
+  card: { overflow: 'hidden', borderRadius: 20, backgroundColor: palette.surface, borderWidth: 1, borderColor: palette.border },
+  cardMain: { padding: 11, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  thumbnail: { width: 105, borderRadius: 12, overflow: 'hidden' },
+  cardBody: { flex: 1, gap: 4 },
+  cardCategory: { color: palette.accent, fontSize: 10, textTransform: 'uppercase', fontWeight: '800', letterSpacing: 0.65 },
+  cardTitle: { color: palette.text, fontSize: 19, letterSpacing: -0.45, fontWeight: '800' },
+  description: { color: palette.muted, fontSize: 13, lineHeight: 17 },
+  cardFooter: { marginHorizontal: 11, paddingLeft: 3, minHeight: 56, borderTopWidth: 1, borderColor: palette.border, flexDirection: 'row', alignItems: 'center' },
+  cardPrice: { color: palette.text, fontSize: 13, fontWeight: '800' },
+  date: { color: palette.muted, fontSize: 11 },
+  iconButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  heartFlash: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
 });

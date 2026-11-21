@@ -19,6 +19,10 @@ export interface Event {
   official_url: string | null;
   featured: boolean;
   demo?: boolean;
+  kind?: 'restaurant';
+  latitude?: number | null;
+  longitude?: number | null;
+  duration_minutes?: number | null;
 }
 
 export const zone = 'America/Toronto';

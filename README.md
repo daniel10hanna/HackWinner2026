@@ -1,6 +1,10 @@
 # MTL NOW
 
-MTL NOW is an Expo SDK 58 event discovery app for Montréal. Discover has search, date and category filters, featured events, and pull-to-refresh. Smart Picks ranks matching events locally, and Saved stores bookmarks on the device.
+MTL NOW is an Expo SDK 58 mobile app for planning outings in Montréal. The feed has Current Events and Restaurants. Double-tap a listing to like it, or swipe left to save it to Favourites. The bottom tabs are Chillz, Search, Profile, Map, and Favourites.
+
+- **Chillz** groups ordered stops and totals per-person CAD prices and known visit durations. Use the driving estimate button for actual road distance and travel time between stops. It sends venue coordinates to an OSRM-compatible route service and excludes waiting time. Set `EXPO_PUBLIC_ROUTING_URL` to your own route endpoint for deployment.
+- **Profile** uses Supabase email/password auth when configured. Sessions live in memory and end on expiration or app restart. Likes, Favourites, and Chillz are stored on the device.
+- **Map** uses published listing coordinates with OpenStreetMap data and CARTO tiles. Demo pins are fictional. Listings with missing coordinates stay off the map.
 
 ## Run the app
 
@@ -11,9 +15,11 @@ npm ci
 npx expo start
 ```
 
-Scan the QR code with Expo Go on Android. On iOS, open the QR code with Camera. To run without a database, tap **Open fictional demo** or set `EXPO_PUBLIC_DEMO_MODE=true` in `.env.local` before starting Expo. The 12 sample events and venues are fictional and their dates are calculated at refresh. Without demo mode, the app uses the configured live feed and offers the demo if the feed fails.
+Scan the QR code with Expo Go on Android. On iOS, open the QR code with Camera. The app opens in fictional demo mode when Supabase is unconfigured. To force demo mode, set `EXPO_PUBLIC_DEMO_MODE=true` in `.env.local` before starting Expo. Sample events and restaurants are fictional, and event dates are calculated at refresh. Without demo mode, the app uses the configured live feed and offers the demo if the feed fails.
 
 Tonight runs from 5 p.m. to midnight Montréal time. This Weekend covers Saturday and Sunday, including the current weekend when today is Sunday. An event with no end time leaves the upcoming feed after its start time. Budget limits are strict, apply to CAD prices, and exclude unknown prices. Interests affect ranking.
+
+Run `npm run web` for a browser preview. Use Expo Go for native touch testing.
 
 ## Environment variables
 
@@ -26,7 +32,7 @@ Use [the environment template](.env.example) as a reference. The mobile app need
 
 ## Set up Supabase
 
-1. Create a Supabase project. In its SQL Editor, run [the migration](supabase/migrations/20261121000000_events.sql) once. The public client can select only published events. The source registry and writes are restricted to trusted operators.
+1. Create a Supabase project. In its SQL Editor, run [the migration](supabase/migrations/20261121000000_events.sql) once. Run [the restaurant migration](supabase/migrations/20261121000001_restaurants.sql) after it. The public client can select only published events and restaurants. Set `published=true` for reviewed restaurants and add latitude and longitude to both kinds of listings before mapping them. The source registry and writes are restricted to trusted operators.
 2. Set the project's URL and publishable key in `.env.local`. Restart Metro. The live feed is empty until you publish events.
 3. Add only sources that permit this use. In the SQL Editor, replace the example values and keep the returned UUID.
 
