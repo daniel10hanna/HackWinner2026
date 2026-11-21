@@ -1,55 +1,69 @@
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
-import { FlatList, StyleSheet, Text, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Chip, Chips, EventCard, FeedStatus, palette, ui } from '@/components/event-ui';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { AppHeader, Screen } from '@/components/app-shell';
+import { Action, Chip, Chips, EventCard, FeedStatus, palette, ui } from '@/components/event-ui';
 import { useEvents } from '@/lib/event-provider';
-import { categories, matchesWindow, windows, zone, type Category, type Window } from '@/lib/events';
+import { matchesWindow, windows, type Window } from '@/lib/events';
+import skyline from '@/assets/images/chillz/montreal.webp';
 
 export default function Discover() {
-  const { upcoming, now, loading, refresh } = useEvents();
-  const [query, setQuery] = useState('');
+  const { upcoming, dining, restaurantError, now, loading, refresh, demo, canSwitch, switchMode, error, saveError } = useEvents();
+  const [mode, setMode] = useState<'events' | 'restaurants'>('events');
   const [window, setWindow] = useState<Window>('All Upcoming');
-  const [category, setCategory] = useState<Category>();
-  const normalize = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
-  const filtered = upcoming.filter(event => matchesWindow(event, window, now) &&
-    (!category || event.category === category) &&
-    normalize([event.title, event.category, event.venue, event.neighborhood].join(' ')).includes(normalize(query.trim())));
-  const featured = filtered.filter(event => event.featured).slice(0, 3);
-  const spotlight = featured[0];
-  const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour: '2-digit', hourCycle: 'h23' }).format(now));
-  const date = new Intl.DateTimeFormat('en-CA', { timeZone: zone, weekday: 'long', month: 'long', day: 'numeric' }).format(now);
-
+  const events = mode === 'events';
+  const filtered = events ? upcoming.filter(event => matchesWindow(event, window, now)) : dining;
   return (
-    <SafeAreaView edges={['top', 'left', 'right']} style={{ flex: 1, backgroundColor: palette.background }}>
-      <FlatList contentContainerStyle={ui.content} keyboardShouldPersistTaps="handled"
-        data={filtered.filter(event => event.id !== spotlight?.id)} keyExtractor={event => event.id}
-        refreshing={loading} onRefresh={refresh} renderItem={({ item }) => <EventCard event={item} />}
-        ListHeaderComponent={
-          <View>
-            <Text style={ui.brand}>MTL NOW</Text>
-            <Text style={ui.label}>{date}</Text>
-            <Text accessibilityRole="header" style={ui.title}>Discover Montréal</Text>
-            <Text style={ui.muted}>Good {hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening'}. What’s on your radar?</Text>
-            <View style={styles.search}>
-              <Ionicons name="search-outline" size={20} color={palette.accent} />
-              <TextInput value={query} onChangeText={setQuery} accessibilityLabel="Search events" placeholder="Search events or neighbourhoods"
-                placeholderTextColor={palette.muted} style={styles.input} returnKeyType="search" />
-            </View>
-            <Chips>{windows.map(value => <Chip key={value} label={value} selected={window === value} onPress={() => setWindow(value)} />)}</Chips>
-            <Chips><Chip label="All categories" selected={!category} onPress={() => setCategory(undefined)} />
-              {categories.map(value => <Chip key={value} label={value} selected={category === value} onPress={() => setCategory(category === value ? undefined : value)} />)}</Chips>
-            <FeedStatus empty={filtered.length ? '' : 'No events match. Try another date, category, or search.'} />
-            {spotlight && <><Text accessibilityRole="header" style={ui.heading}>Featured</Text><EventCard event={spotlight} featured /></>}
-            {filtered.length > (spotlight ? 1 : 0) && <Text accessibilityRole="header" style={ui.heading}>Coming up</Text>}
+    <Screen>
+      <View style={[ui.content, { paddingBottom: 10 }]}>
+        <AppHeader />
+        <View style={styles.segments}>
+          {(['events', 'restaurants'] as const).map(item => <Pressable key={item} accessibilityRole="tab"
+            accessibilityState={{ selected: mode === item }} onPress={() => setMode(item)}
+            style={[styles.segment, item === mode && styles.segmentActive]}>
+            <Ionicons name={item === 'events' ? 'calendar-outline' : 'restaurant-outline'} size={17} color={item === mode ? '#271842' : palette.muted} />
+            <Text style={[styles.segmentText, item === mode && { color: '#271842' }]}>{item === 'events' ? 'Current events' : 'Restaurants'}</Text>
+          </Pressable>)}
+        </View>
+      </View>
+      <FlatList contentContainerStyle={[ui.content, { paddingTop: 0 }]}
+        data={filtered} keyExtractor={item => item.id} refreshing={loading} onRefresh={refresh}
+        renderItem={({ item }) => <EventCard event={item} />}
+        ListHeaderComponent={<View>
+          <View style={styles.hero}>
+            <Image source={skyline} contentFit="cover" style={StyleSheet.absoluteFill} />
+            <LinearGradient colors={['#16102222', '#100e19ef']} style={StyleSheet.absoluteFill} />
+            <Text style={styles.heroTitle} accessibilityRole="header">{events ? 'What’s on in Montréal' : 'Where to eat in Montréal'}</Text>
           </View>
-        }
+          {events && <Chips>{windows.map(value => <Chip key={value} label={value} selected={window === value} onPress={() => setWindow(value)} />)}</Chips>}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>{events ? 'Coming up' : 'Places to eat'}</Text>
+            <Text style={ui.muted}>{demo ? 'Fictional demo' : filtered.length + ' listings'}</Text>
+          </View>
+          {events && (!demo || canSwitch || loading || Boolean(error || saveError)) && <FeedStatus empty={filtered.length ? '' : 'No events for this date filter.'} />}
+          {events && demo && !loading && !error && !canSwitch && !filtered.length && <Text style={ui.muted}>No events for this date filter.</Text>}
+          {!events && !filtered.length && <View style={ui.panel}>
+            <Text style={ui.muted}>{restaurantError || 'No restaurants are listed yet.'}</Text>
+            {restaurantError && <Action label="Retry" onPress={refresh} />}
+            {canSwitch && !demo && <Action label="Open fictional demo" onPress={switchMode} />}
+          </View>}
+          {filtered.length > 0 && <Text style={styles.hint}>Double-tap to like · Swipe left to save</Text>}
+        </View>}
       />
-    </SafeAreaView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  search: { ...ui.row, backgroundColor: palette.surface, borderColor: palette.border, borderWidth: 1, borderRadius: 15, marginTop: 18, marginBottom: 7, paddingHorizontal: 14 },
-  input: { flex: 1, minHeight: 50, color: palette.text, fontSize: 16 },
+  segments: { flexDirection: 'row', gap: 5, backgroundColor: palette.surface, borderColor: palette.border, borderWidth: 1, borderRadius: 15, padding: 4 },
+  segment: { flex: 1, minHeight: 43, borderRadius: 11, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  segmentActive: { backgroundColor: palette.accent },
+  segmentText: { color: palette.muted, fontWeight: '800', fontSize: 13 },
+  hero: { height: 159, borderRadius: 19, overflow: 'hidden', padding: 17, justifyContent: 'flex-end', marginBottom: 10 },
+  heroTitle: { color: palette.text, fontSize: 29, fontWeight: '900', letterSpacing: -1 },
+  section: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, marginBottom: 3 },
+  sectionTitle: { color: palette.text, fontWeight: '800', fontSize: 21, letterSpacing: -0.6 },
+  hint: { color: palette.muted, marginBottom: 10, fontSize: 12 },
 });
