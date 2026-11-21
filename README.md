@@ -1,56 +1,75 @@
-# Welcome to your Expo app 👋
+# MTL NOW
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+MTL NOW is an Expo SDK 58 event discovery app for Montréal. Discover has search, date and category filters, featured events, and pull-to-refresh. Smart Picks ranks matching events locally, and Saved stores bookmarks on the device.
 
-## Get started
+## Run the app
 
-1. Install dependencies
+Use Node.js 24, npm and the matching Expo Go client. On Windows PowerShell, use `npm.cmd` and `npx.cmd` if the execution policy blocks the PowerShell wrappers.
 
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **src/app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```sh
+npm ci
+npx expo start
 ```
 
-This command will move the starter code to the **example** directory and create a blank **src/app** directory where you can start developing.
+Scan the QR code with Expo Go on Android. On iOS, open the QR code with Camera. To run without a database, tap **Open fictional demo** or set `EXPO_PUBLIC_DEMO_MODE=true` in `.env.local` before starting Expo. The 12 sample events and venues are fictional and their dates are calculated at refresh. Without demo mode, the app uses the configured live feed and offers the demo if the feed fails.
 
-### Other setup steps
+Tonight runs from 5 p.m. to midnight Montréal time. This Weekend covers Saturday and Sunday, including the current weekend when today is Sunday. An event with no end time leaves the upcoming feed after its start time. Budget limits are strict, apply to CAD prices, and exclude unknown prices. Interests affect ranking.
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+## Environment variables
 
-## Learn more
+| File | Variables |
+| --- | --- |
+| `.env.local` | `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, optional `EXPO_PUBLIC_DEMO_MODE=true` |
+| `.env.server.local` | `SUPABASE_URL`, `SUPABASE_SERVER_KEY` (Supabase secret key or legacy service-role key), `OPENAI_API_KEY`, optional `OPENAI_MODEL` (defaults to `gpt-4.1-mini`) |
 
-To learn more about developing your project with Expo, look at the following resources:
+Use [the environment template](.env.example) as a reference. The mobile app needs only its public values. Keep the server file local to the importer.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## Set up Supabase
 
-## Join the community
+1. Create a Supabase project. In its SQL Editor, run [the migration](supabase/migrations/20261121000000_events.sql) once. The public client can select only published events. The source registry and writes are restricted to trusted operators.
+2. Set the project's URL and publishable key in `.env.local`. Restart Metro. The live feed is empty until you publish events.
+3. Add only sources that permit this use. In the SQL Editor, replace the example values and keep the returned UUID.
 
-Join our community of developers creating universal apps.
+```sql
+insert into public.sources (name, url, feed_url, source_type, enabled)
+values ('Approved source name', 'https://example.org', null, 'website', true)
+returning id;
+```
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Set `feed_url` to a permitted public HTTPS RSS or Atom feed to enable feed imports. A source is disabled by default unless enabled explicitly.
+
+## Import and publish events
+
+The private Node CLI reads `.env.server.local`. It uses OpenAI Structured Outputs, interprets explicit event dates in Toronto time, rejects incomplete or expired candidates, and deposits valid rows in the pending queue. Repeat imports ignore duplicate normalized title and start-time combinations. Review each draft against the source before publishing.
+
+```sh
+npm run ingest -- text SOURCE_UUID ./article.txt https://example.org/original-article
+npm run ingest -- url SOURCE_UUID https://example.org/original-article
+npm run ingest -- rss SOURCE_UUID
+npm run ingest -- review
+npm run ingest -- publish EVENT_UUID
+npm run ingest -- reject EVENT_UUID
+```
+
+The text command accepts article text or a permitted local export and requires the original public article URL. The URL command works for readable HTML on the enabled source origin. It does not follow redirects or bypass access controls. RSS handles up to eight RSS or Atom entries per source per run using the available entry content. Omit the RSS UUID to process all enabled feeds. You can schedule that same CLI in a trusted server job. This repository does not configure a hosted schedule.
+
+Review and correct fields in Supabase Table Editor before publishing. Add an `image_url` only when you have rights to use the image. Mark selected records with `featured=true` to spotlight them. The app labels AI-generated summaries on event details. The importer stores a short original summary and source URL rather than the article. Avoid importing nonpublic content or material you are not permitted to process.
+
+## Checks and Android APK
+
+```sh
+npm run lint
+npm run typecheck
+npm test
+npx expo export --platform android
+```
+
+When ready to start a cloud build, authenticate with Expo, link the project, and run the demo APK profile.
+
+```sh
+npx eas-cli@latest login
+npx eas-cli@latest init
+npx eas-cli@latest build --platform android --profile preview
+```
+
+For a live APK, set `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in the EAS production environment and build with `--profile live-apk`. Both profiles produce installable APKs. Open the build link to download and install the APK on Android.
